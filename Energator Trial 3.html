@@ -1,0 +1,1762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Windmill Shadow Simulation — VE + Duty Reset (Current MPPT)</title>
+  <style>
+    body { margin: 0; overflow: hidden; font-family: 'Inter', sans-serif; background: linear-gradient(to bottom, #87ceeb, #f0f8ff); }
+    canvas { display: block; }
+
+    .ui-panel {
+      position: absolute;
+      padding: 10px 15px;
+      background-color: rgba(0,0,0,0.6);
+      color: white;
+      border-radius: 8px;
+      font-size: 14px;
+      z-index: 10;
+    }
+    .info { top: 10px; left: 10px; max-width: 340px; }
+
+    .controls-container {
+      top: 10px;
+      right: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .controls-container label { font-weight: bold; }
+    .controls-container input,
+    .controls-container select,
+    .controls-container button {
+      padding: 8px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      background: #fff;
+      color: #333;
+    }
+    .controls-container button { cursor: pointer; background: #4CAF50; color: white; border: none; transition: opacity 0.2s; }
+    .controls-container button:hover { opacity: 0.9; }
+    .controls-container button#measure-button { background: #f39c12; }
+    .controls-container button#analyze-button { background: #3498db; }
+    .controls-container button#panel-voltage-toggle { background: #2ecc71; }
+    .controls-container button#mppt-settings-toggle { background: #16a085; }
+    .controls-container button#ve-settings-toggle { background: #27ae60; }
+
+    .animation-controls { position: absolute; left: 10px; top: 230px; z-index: 10; display: flex; flex-direction: column; gap: 8px; }
+    .animation-controls button { width: 84px; padding: 8px; border-radius: 8px; border: 1px solid #fff; background: rgba(0,0,0,0.6); color: white; cursor: pointer; font-size: 14px; }
+
+    .speed-controls { display: flex; align-items: center; gap: 5px; background: rgba(0,0,0,0.6); padding: 8px; border-radius: 8px; border: 1px solid #fff; }
+    .speed-controls button { width: 30px; height: 30px; padding: 0; font-size: 16px; border-radius: 4px; background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); cursor: pointer; }
+    .speed-display { color: white; font-size: 12px; min-width: 40px; text-align: center; }
+
+    .slider-container label { display: block; margin-bottom: 4px; }
+    input[type="range"] { width: 100%; cursor: pointer; }
+
+    .time-display { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); padding: 8px 16px; background-color: rgba(0,0,0,0.7); color: white; border-radius: 20px; font-size: 16px; font-weight: 500; white-space: nowrap; }
+
+    #measurement-display { position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%); background-color: rgba(243,156,18,0.8); color: white; padding: 10px 20px; border-radius: 8px; font-size: 16px; font-weight: bold; opacity: 0; transition: opacity 0.5s; pointer-events: none; text-align: center; }
+    #measurement-display.visible { opacity: 1; }
+
+    #iv-chart-panel { position: absolute; bottom: 10px; right: 10px; width: 480px; height: 380px; background-color: rgba(0,0,0,0.78); border-radius: 8px; padding: 15px; color: white; display: none; z-index: 20; }
+    #iv-chart-panel h3 { margin: 0 0 10px 0; text-align: center; font-size: 16px; }
+    #iv-chart-container { width: 100%; height: 260px; }
+    #iv-data { font-size: 12px; margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+
+    .compass { position: absolute; top: 140px; left: 10px; width: 80px; height: 80px; background-color: rgba(0,0,0,0.5); border-radius: 50%; border: 2px solid #fff; display: flex; justify-content: center; align-items: center; z-index: 10; }
+    .compass-needle { width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 35px solid #e74c3c; position: absolute; top: 5px; transform-origin: bottom center; transition: transform 0.2s linear; }
+    .compass-needle::after { content: ''; position: absolute; left: -5px; top: 35px; width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 25px solid #f0f0f0; }
+    .compass-letter { position: absolute; color: white; font-weight: bold; font-size: 12px; }
+    .north { top: 2px; } .east { right: 5px; top: 50%; transform: translateY(-50%); } .south { bottom: 2px; } .west { left: 5px; top: 50%; transform: translateY(-50%); }
+
+    .grid-2 { display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
+
+    /* whole day panel */
+    #daily-panel { bottom:10px; left:10px; width: 235px; }
+    #daily-readout { display:grid; grid-template-columns:auto auto; gap:4px 10px; margin-top:6px; font-variant-numeric: tabular-nums; }
+    #daily-status { margin-top:6px; font-size:12px; opacity:0.85; }
+
+    /* Panel Voltages panel */
+    #panel-voltage-panel { position: absolute; bottom: 10px; right: 500px; width: 300px; max-height: 380px; overflow: auto; background-color: rgba(0,0,0,0.78); border-radius: 8px; padding: 12px; color: white; display: none; z-index: 20; }
+    #panel-voltage-panel h3 { margin: 0 0 8px 0; font-size: 15px; text-align:center; }
+    #panel-voltage-meta { font-size: 12px; opacity: 0.85; text-align:center; margin-bottom:6px; }
+    #panel-voltage-list { display: grid; grid-template-columns: auto auto; gap: 4px 10px; font-variant-numeric: tabular-nums; font-size: 13px; }
+    .pv-badge { opacity: 0.85; font-size:11px; border:1px solid rgba(255,255,255,0.2); border-radius:6px; padding:2px 6px; display:inline-block; margin: 2px; }
+    #panel-voltage-chart { width: 100%; height: 120px; margin-top: 8px; }
+
+    /* MPPT settings panel (hidden until toggled) */
+    #mppt-settings-panel { position:absolute; top: 10px; right: 10px; width: 360px; background: rgba(0,0,0,0.85); color:#fff; border-radius:8px; padding:12px; display:none; z-index:30; }
+    #mppt-settings-panel h3 { margin: 0 0 8px 0; font-size: 15px; text-align:center; }
+
+    /* VE panel (hidden until toggled) */
+    #ve-panel {
+      position: absolute;
+      bottom: 10px;
+      left: calc(50% - 180px);
+      width: 360px;
+      background: rgba(0,0,0,0.85);
+      color:#fff;
+      border-radius:8px;
+      padding:12px;
+      display:none;
+      z-index:25;
+      max-height: min(420px, 72vh);
+      overflow: auto;
+    }
+    #ve-panel button {
+      background: #27ae60;
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 6px;
+      padding: 8px 10px;
+      cursor: pointer;
+    }
+    #ve-panel button#ve-toggle { background:#16a085; }
+    #ve-panel button#ve-reset  { background:#e67e22; }
+    #ve-panel canvas { background: transparent !important; }
+    #ve-panel h3 { margin: 0 0 8px 0; font-size: 15px; text-align:center; }
+    #ve-grid { display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
+    #ve-grid label { font-weight:600; font-size:12px; opacity:0.9; }
+    #ve-grid input, #ve-grid select { padding:6px; border-radius:6px; border:1px solid #999; }
+    #ve-trace-wrap { grid-column: 1 / span 2; }
+  </style>
+</head>
+<body>
+  <div class="info ui-panel">
+    <strong>Wind & Solar Simulation</strong><br>
+    - Solar panels use single-axis tracking.<br>
+    - Drag to rotate, Scroll to zoom.<br>
+    - Accurate Shockley diode I-V curves!<br>
+    <em>✓ Advanced multi-step IV curves</em><br>
+    <em>✓ Inverter with MPPT (Current-Only)</em><br>
+    <em>✓ VE Equalizer + Duty Reset</em>
+  </div>
+
+  <div id="compass" class="compass">
+    <div class="compass-needle"></div>
+    <div class="compass-letter north">N</div>
+    <div class="compass-letter east">E</div>
+    <div class="compass-letter south">S</div>
+    <div class="compass-letter west">W</div>
+  </div>
+
+  <div class="animation-controls">
+    <button id="pause-button">❚❚ Pause</button>
+    <div class="speed-controls">
+      <button id="speed-down">−</button>
+      <div class="speed-display" id="speed-display">1.0x</div>
+      <button id="speed-up">+</button>
+    </div>
+  </div>
+
+  <div class="controls-container ui-panel">
+    <label for="date-picker">Select Date:</label>
+    <input type="date" id="date-picker">
+
+    <div class="slider-container">
+      <label for="time-slider">Time of Day:</label>
+      <input type="range" id="time-slider" min="0" max="1000" value="0">
+    </div>
+
+    <button id="measure-button">📏 Analyze Shadow</button>
+    <button id="analyze-button">📈 Analyze Solar String</button>
+    <button id="panel-voltage-toggle">🧮 Panel Voltages</button>
+    <button id="mppt-settings-toggle">⚙️ MPPT Settings</button>
+    <button id="ve-settings-toggle">⚙️ VE Settings</button>
+
+    <div class="slider-container">
+      <label>Energy Scan (0.01 s)</label>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button id="energy-live-toggle">▶ Start Live Scan</button>
+        <button id="energy-live-reset">↺ Reset</button>
+      </div>
+    </div>
+
+    <div class="slider-container">
+      <label>Whole-Day Energy (sunrise → sunset)</label>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button id="compute-day">▶ Compute Day</button>
+        <button id="reset-day">↺ Reset</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="time-display" class="time-display">Time: 00:00</div>
+  <div id="measurement-display"></div>
+
+  <!-- MPPT settings -->
+  <div id="mppt-settings-panel" class="ui-panel">
+    <h3>MPPT Settings (Current Control)</h3>
+    <div class="grid-2">
+      <label>Mode</label>
+      <select id="mppt-mode">
+        <option value="po">Perturb & Observe (P&O)</option>
+        <option value="inc">Incremental Conductance</option>
+      </select>
+
+      <label>MPPT Frequency (Hz)</label>
+      <input id="mppt-freq" type="number" min="0.05" max="1000" step="0.05" value="10" />
+
+      <label>P&O Step (A)</label>
+      <input id="po-step" type="number" min="0.01" step="0.01" value="0.50" />
+
+      <label>IncCond Step (A)</label>
+      <input id="inc-step" type="number" min="0.01" step="0.01" value="0.40" />
+
+      <label>Inverter Efficiency η</label>
+      <input id="inv-eta" type="number" min="0.5" max="1.0" step="0.01" value="0.97" />
+
+      <label>Enable Inverter</label>
+      <select id="inv-enable">
+        <option value="on" selected>On</option>
+        <option value="off">Off</option>
+      </select>
+    </div>
+    <div style="display:flex; gap:8px; margin-top:8px;">
+      <button id="mppt-toggle">❚❚ Pause MPPT</button>
+      <button id="mppt-reset">↺ Reset MPPT</button>
+    </div>
+  </div>
+
+  <div id="iv-chart-panel">
+    <h3>Solar String I-V Curve (Advanced Model)</h3>
+    <div id="iv-chart-container"><canvas id="iv-chart"></canvas></div>
+    <div id="iv-data"></div>
+  </div>
+
+  <!-- Panel Voltages panel -->
+  <div id="panel-voltage-panel" class="ui-panel">
+    <h3>Panel Voltages</h3>
+    <div id="panel-voltage-meta"></div>
+    <div id="panel-voltage-list"></div>
+    <canvas id="panel-voltage-chart"></canvas>
+  </div>
+
+  <!-- VE controls + trace -->
+  <div id="ve-panel" class="ui-panel" style="display:none;">
+    <h3>VE Settings</h3>
+    <div id="ve-grid">
+      <label>VE Power</label>
+      <select id="ve-enable">
+        <option value="on">On</option>
+        <option value="off" selected>Off</option>
+      </select>
+
+      <label>Duty Cycle Duration (ms)</label>
+      <input id="ve-reset-ms" type="number" step="10" value="250" />
+
+      <label>Step Interval (ms)</label>
+      <input id="ve-step-ms" type="number" step="1" value="10" />
+
+      <label>Duty Step (%)</label>
+      <input id="ve-duty-step" type="number" step="0.5" value="2.0" />
+
+      <label>Minimum Duty (%)</label>
+      <input id="ve-duty-min" type="number" step="1" value="20" />
+
+      <label>Surge Threshold (V)</label>
+      <input id="ve-threshold" type="number" step="0.1" value="1.0" />
+
+      <div id="ve-trace-wrap">
+        <label>Trace Panels (≤ 8, e.g. 2,7,11,20)</label>
+        <input id="ve-trace" placeholder="panel numbers to plot" />
+      </div>
+
+      <div></div>
+      <button id="ve-apply" style="margin-top:4px;">Apply VE Settings</button>
+    </div>
+
+    <div style="display:flex; gap:8px; margin-top:10px;">
+      <button id="ve-toggle">❚❚ Pause VE</button>
+      <button id="ve-reset">↺ Reset VE</button>
+    </div>
+
+    <canvas id="ve-volt-chart" style="width:100%; height:180px; margin-top:8px;"></canvas>
+  </div>
+
+  <div id="energy-panel" class="ui-panel" style="bottom:10px; left:50%; transform:translateX(-50%); display:none;">
+    <div><strong>Energy (kWh)</strong></div>
+    <div id="energy-readout" style="display:grid; grid-template-columns: auto auto; gap:4px 12px; margin-top:6px;"></div>
+  </div>
+
+  <div id="daily-panel" class="ui-panel">
+    <div><strong>Whole-Day Energy (kWh)</strong></div>
+    <div id="daily-readout"></div>
+    <div id="daily-status"></div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/suncalc/1.8.0/suncalc.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script type="importmap">{
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.164.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.0/examples/jsm/"
+    }
+  }</script>
+
+  <script type="module">
+  import * as THREE from 'three';
+  import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+  // --- UI refs
+  const timeDisplay = document.getElementById('time-display');
+  const datePicker = document.getElementById('date-picker');
+  const timeSlider = document.getElementById('time-slider');
+  const measureButton = document.getElementById('measure-button');
+  const analyzeButton = document.getElementById('analyze-button');
+  const measurementDisplay = document.getElementById('measurement-display');
+  const compassNeedle = document.querySelector('.compass-needle');
+  const pauseButton = document.getElementById('pause-button');
+  const speedUpButton = document.getElementById('speed-up');
+  const speedDownButton = document.getElementById('speed-down');
+  const speedDisplay = document.getElementById('speed-display');
+  const ivPanel = document.getElementById('iv-chart-panel');
+  const ivDataDisplay = document.getElementById('iv-data');
+  const panelVoltPanel = document.getElementById('panel-voltage-panel');
+  const panelVoltMeta = document.getElementById('panel-voltage-meta');
+  const panelVoltList = document.getElementById('panel-voltage-list');
+  const panelVoltToggle = document.getElementById('panel-voltage-toggle');
+  const panelVoltChartCanvas = document.getElementById('panel-voltage-chart');
+  let panelVoltChart;
+
+  // MPPT UI
+  const mpptSettingsPanel = document.getElementById('mppt-settings-panel');
+  const mpptSettingsToggle = document.getElementById('mppt-settings-toggle');
+  const mpptModeSel = document.getElementById('mppt-mode');
+  const mpptFreqInput = document.getElementById('mppt-freq');
+  const poStepInput = document.getElementById('po-step');
+  const incStepInput = document.getElementById('inc-step');
+  const invEtaInput = document.getElementById('inv-eta');
+  const invEnableSel = document.getElementById('inv-enable');
+  const mpptToggleBtn = document.getElementById('mppt-toggle');
+  const mpptResetBtn = document.getElementById('mppt-reset');
+
+  // Live energy UI
+  const energyPanel = document.getElementById('energy-panel');
+  const energyReadout = document.getElementById('energy-readout');
+  const energyLiveToggle = document.getElementById('energy-live-toggle');
+  const energyLiveReset = document.getElementById('energy-live-reset');
+
+  // Whole-day UI
+  const dailyReadout = document.getElementById('daily-readout');
+  const dailyStatus = document.getElementById('daily-status');
+  const dailyRunBtn = document.getElementById('compute-day');
+  const dailyResetBtn = document.getElementById('reset-day');
+
+  // VE UI
+  const vePanel = document.getElementById('ve-panel');
+  const veSettingsToggle = document.getElementById('ve-settings-toggle');
+  const veEnableSel = document.getElementById('ve-enable');
+  const veResetMsInput = document.getElementById('ve-reset-ms');
+  const veStepMsInput = document.getElementById('ve-step-ms');
+  const veDutyStepInput = document.getElementById('ve-duty-step');
+  const veDutyMinInput = document.getElementById('ve-duty-min');
+  const veThresholdInput = document.getElementById('ve-threshold');
+  const veTraceInput = document.getElementById('ve-trace');
+  const veApplyBtn = document.getElementById('ve-apply');
+  const veToggleBtn = document.getElementById('ve-toggle');
+  const veResetBtn = document.getElementById('ve-reset');
+  const veVoltChartCanvas = document.getElementById('ve-volt-chart');
+  let veVoltChart;
+
+  // --- 3D scene state
+  let scene, camera, renderer, controls;
+  let ground, windmill;
+  let directionalLight, ambientLight;
+  let shadowLine, targetStringHelper;
+  let bladeMeshes = [];
+  let nacelleMesh; let towerMesh, hubMesh;
+  let solarLines = []; let targetString;
+  let ivChart;
+  let analysisMode = false;
+  let animationSpeed = 1.0;
+  let panelIndicators = [];
+
+  // --- world/env
+  const LAT = 23.8569, LON = 69.7208;
+  let sunTimes, totalDaylightMs = 0;
+  let currentWindSpeed = 15; // km/h
+  let currentSunAltitude = 0, currentSunAzimuth = 0;
+  let isAnimationPaused = false;
+  const TSR = 7.0, ROTOR_RADIUS = 80;
+  const CUT_IN_SPEED_MS = 3.0, CUT_OUT_SPEED_MS = 20.0;
+
+  // --- PV constants
+  const Voc_stc = 52.1, Isc_stc = 13.83, Vmpp_stc = 43.56, Impp_stc = 13.08;
+  const PANELS_PER_STRING = 28; const SUBSTRINGS_PER_PANEL = 3; const TOTAL_SUBSTRINGS = PANELS_PER_STRING * SUBSTRINGS_PER_PANEL; // 84
+  const tempCoeff_Voc = -0.0024; const tempCoeff_Isc = 0.00028;
+  const k = 1.380649e-23, q = 1.602176634e-19;
+  const CELLS_PER_PANEL = 72; const IDEALITY_FACTOR = 1.2;
+  const SERIES_RESISTANCE_PER_PANEL = 0.005; const SHUNT_RESISTANCE_PER_PANEL = 1000; const BYPASS_DIODE_VOLTAGE = -0.5; const PANEL_VMIN = 3.5;
+
+  // VE optimizer grouping
+  const PANELS_PER_OPT = 4;
+  const NUM_OPTIMIZERS = PANELS_PER_STRING / PANELS_PER_OPT;
+
+  function optimizerIndexForPanel(panelIndex){
+    return Math.floor(panelIndex / PANELS_PER_OPT); // 0..6 for 28 panels
+  }
+
+  // --- MPPT (Current-control only)
+  const MPPT = { enabled: true, paused: false, mode: 'po', Iset: 0, Vop: 0, Iop: 0, Pop: 0, Pac: 0, lastP: 0, lastV: 0, dir: 1, accum: 0, period: 1/50, poStep: 0.5, incStep: 0.4, eta: 0.97 };
+  let DRIVE_MPPT_FROM_ENERGY = false;
+
+  function setMpptFromUI(){
+    MPPT.mode = mpptModeSel.value;
+    MPPT.period = 1 / Math.max(0.05, Number(mpptFreqInput.value || 10));
+    MPPT.poStep = Math.max(0.01, Number(poStepInput.value || 0.5));
+    MPPT.incStep = Math.max(0.01, Number(incStepInput.value || 0.4));
+    MPPT.eta = Math.min(1.0, Math.max(0.5, Number(invEtaInput.value || 0.97)));
+    MPPT.enabled = (invEnableSel.value === 'on');
+  }
+  mpptModeSel.onchange = setMpptFromUI; mpptFreqInput.oninput = setMpptFromUI; poStepInput.oninput = setMpptFromUI; incStepInput.oninput = setMpptFromUI; invEtaInput.oninput = setMpptFromUI; invEnableSel.onchange = setMpptFromUI;
+  const mpptSettingsShowHide = () => { const isShown = mpptSettingsPanel.style.display !== 'none'; mpptSettingsPanel.style.display = isShown ? 'none' : 'block'; };
+  document.getElementById('mppt-settings-toggle').onclick = mpptSettingsShowHide;
+  document.getElementById('mppt-toggle').onclick = ()=>{ MPPT.paused = !MPPT.paused; document.getElementById('mppt-toggle').textContent = MPPT.paused ? '► Run MPPT' : '❚❚ Pause MPPT'; };
+  document.getElementById('mppt-reset').onclick = ()=> resetMPPT(true);
+
+  function resetMPPT(forceInit=false){
+    if (!lastShadedIV?.points?.length) return;
+    const { vmpp, impp } = getMpp(lastShadedIV.points);
+    if (forceInit || !(MPPT.Iset>0)) MPPT.Iset = impp || 0;
+    MPPT.Vop = sampleVFromCurve(lastShadedIV.points, MPPT.Iset);
+    MPPT.lastV = MPPT.Vop; MPPT.lastP = 0; MPPT.dir = 1;
+  }
+  function argMax(arr){ let mi=0,mv=-Infinity; for(let i=0;i<arr.length;i++){ if(arr[i]>mv){mv=arr[i];mi=i;} } return mi; }
+
+  // --- Live Energy state
+  const ENERGY = { dt: 0.01, enabled: false, E_ideal:0, E_shaded:0, E_dc:0, E_ac:0, _simMs:0, wallStartMs:0, simStartMs:0, lastSpeed:1 };
+  let lastUnshadedPmax = 0;
+
+  // --- caches for panel/substrings
+  let LAST_IRR = null; let LAST_CELLT = 25;
+
+  // --- VE: per-optimizer arrays + pause flag
+  const VE = {
+    enabled: false,
+    paused: false,
+
+    // 7 optimizers (4 panels each)
+    duty: new Array(NUM_OPTIMIZERS).fill(1.0),
+    prevV: new Array(NUM_OPTIMIZERS).fill(0),
+    wasShaded: new Array(NUM_OPTIMIZERS).fill(false),
+    resetCountdown: new Array(NUM_OPTIMIZERS).fill(0),
+
+    thresholdV: 1.0,
+    stepMs: 10,
+    dutyStep: 0.02,
+    dutyMin: 0.2,
+    resetMs: 250,
+    accum: 0,
+
+    // per-panel volts for plotting / trace
+    lastVolts: new Array(PANELS_PER_STRING).fill(0),
+    refVoltage: 0
+  };
+
+  // ECG-style trace selection
+  const VE_TRACE_CFG = { windowSec: 25, maxSeries: 8 };
+  const veTrace = { t0: performance.now(), ids: [] };
+
+  function applyVeSettingsFromUI(){
+    VE.enabled = (veEnableSel.value === 'on');
+    VE.resetMs = Number(veResetMsInput.value || 250);
+    VE.stepMs = Math.max(1, Number(veStepMsInput.value || 10));
+    VE.dutyStep = Math.max(0.001, Number(veDutyStepInput.value || 2.0)/100.0);
+    VE.dutyMin = Math.min(0.95, Math.max(0.05, Number(veDutyMinInput.value || 20)/100.0));
+    VE.thresholdV = Math.max(0.05, Number(veThresholdInput.value || 1.0));
+
+    // Reset per-optimizer state
+    for (let g = 0; g < NUM_OPTIMIZERS; g++){
+      VE.prevV[g] = 0;
+      VE.wasShaded[g] = false;
+      VE.resetCountdown[g] = 0;
+      VE.duty[g] = 1.0;
+    }
+
+    // Reset per-panel voltages for plotting
+    for (let p = 0; p < PANELS_PER_STRING; p++){
+      VE.lastVolts[p] = 0;
+    }
+
+    // Configure trace selection (≤ maxSeries panels)
+    const traceList = String(veTraceInput?.value||'')
+      .split(/[ ,]+/).map(s=>parseInt(s,10))
+      .filter(n=>Number.isInteger(n)&&n>=1&&n<=PANELS_PER_STRING)
+      .slice(0, VE_TRACE_CFG.maxSeries)
+      .map(n=>n-1);
+    veTrace.ids = Array.from(new Set(traceList));
+    veTrace.t0 = performance.now();
+    buildVeTraceDatasets();
+  }
+  veApplyBtn.onclick = applyVeSettingsFromUI;
+  veEnableSel.onchange = applyVeSettingsFromUI;
+  veResetMsInput.oninput = veStepMsInput.oninput = veDutyStepInput.oninput = veDutyMinInput.oninput = veThresholdInput.oninput = () => { applyVeSettingsFromUI(); };
+
+  // VE panel show/hide + pause/reset
+  function veShowHide(){ const showing = vePanel.style.display !== 'none'; vePanel.style.display = showing ? 'none' : 'block'; }
+  veSettingsToggle.onclick = veShowHide;
+  function veReset(hard=true){
+    if (hard){
+      for (let g = 0; g < NUM_OPTIMIZERS; g++){
+        VE.duty[g] = 1.0;
+        VE.prevV[g] = 0;
+        VE.wasShaded[g] = false;
+        VE.resetCountdown[g] = 0;
+      }
+    }
+    VE.accum=0;
+  }
+  veToggleBtn.onclick = ()=>{ VE.paused = !VE.paused; veToggleBtn.textContent = VE.paused ? '► Run VE' : '❚❚ Pause VE'; };
+  veResetBtn.onclick = ()=> veReset(true);
+
+  // helpers
+  function getCurrentSimTimeMs(){ if (!sunTimes || totalDaylightMs<=0) return Date.now(); const p = Number(timeSlider.value)/1000; return sunTimes.sunrise.getTime() + p*totalDaylightMs; }
+  function setCurrentSimTimeMs(ms){ if (!sunTimes || totalDaylightMs<=0) return; const lo = sunTimes.sunrise.getTime(); const hi = sunTimes.sunset.getTime(); const clamped = Math.max(lo, Math.min(hi, ms)); const p = (clamped - lo)/totalDaylightMs; timeSlider.value = Math.round(p*1000); updateSceneFromSlider(); }
+
+  function updateEnergyPanel(){
+    energyPanel.style.display='block';
+    const f=v=>Number.isFinite(v)?v.toFixed(3):'-';
+    energyReadout.innerHTML = `
+      <div>Ideal (unshaded):</div><div><strong>${f(ENERGY.E_ideal)}</strong></div>
+      <div>Max (shaded):</div><div><strong>${f(ENERGY.E_shaded)}</strong></div>
+      <div>Actual DC:</div><div><strong>${f(ENERGY.E_dc)}</strong></div>
+      <div>Actual AC:</div><div><strong>${f(ENERGY.E_ac)}</strong></div>`;
+  }
+
+  energyLiveToggle.onclick = () => {
+    ENERGY.enabled = !ENERGY.enabled;
+    DRIVE_MPPT_FROM_ENERGY = ENERGY.enabled;
+    energyLiveToggle.textContent = ENERGY.enabled ? '❚❚ Pause Live Scan' : '▶ Start Live Scan';
+    energyPanel.style.display = 'block';
+    if (ENERGY.enabled && !analysisMode) toggleAnalysisMode();
+    if (ENERGY.enabled) {
+      const now = performance.now();
+      ENERGY.simStartMs = getCurrentSimTimeMs();
+      ENERGY._simMs = ENERGY.simStartMs;
+      ENERGY.wallStartMs = now;
+      ENERGY.lastSpeed = animationSpeed;
+    }
+  };
+  energyLiveReset.onclick = () => { ENERGY.E_ideal=ENERGY.E_shaded=ENERGY.E_dc=ENERGY.E_ac=0; updateEnergyPanel(); };
+
+  function getMpp(points){ if (!points?.length) return { vmpp:0, impp:0, idx:-1 }; const idx = argMax(points.map(p=>p.power ?? (p.x*p.y))); return { vmpp: points[idx]?.x||0, impp: points[idx]?.y||0, idx } }
+  function retimeEnergyAnchor(){ if (!ENERGY.enabled) return; const now = performance.now(); ENERGY.simStartMs = ENERGY._simMs; ENERGY.wallStartMs = now; ENERGY.lastSpeed = animationSpeed; }
+
+  // --- Whole-day panel state
+  const DAILY = { E_ideal:0, E_shaded:0, E_dc:0, E_ac:0 };
+  const WHOLEDAY = { BASE_DT_SEC: 10, MIN_DT_SEC: 0.01, POWER_TOL_W: 300, MAX_DEPTH: 7 };
+  function showDaily(){ const f=v=>Number.isFinite(v)?v.toFixed(3):'-'; dailyReadout.innerHTML = `
+      <div>Ideal (unshaded):</div><div><strong>${f(DAILY.E_ideal)}</strong></div>
+      <div>Max (shaded):</div><div><strong>${f(DAILY.E_shaded)}</strong></div>
+      <div>Actual DC:</div><div><strong>${f(DAILY.E_dc)}</strong></div>
+      <div>Actual AC:</div><div><strong>${f(DAILY.E_ac)}</strong></div>`; }
+  function resetDaily(){ DAILY.E_ideal=DAILY.E_shaded=DAILY.E_dc=DAILY.E_ac=0; dailyStatus.textContent=''; showDaily(); }
+  dailyResetBtn.onclick = resetDaily; dailyRunBtn.onclick = ()=>computeWholeDayEnergy();
+
+  // --- Shockley helpers
+  const IDEALITY = IDEALITY_FACTOR;
+  function solveSubstringVoltage(I, params){ const { IL, I0, Vt, Rs, Rsh } = params; if (I > IL) return Rsh * (IL - I); let voltage = 0; for (let i=0;i<5;i++){ const shuntCurrent = (voltage + I * Rs) / Rsh; let diodeCurrent = IL - I - shuntCurrent; if (diodeCurrent <= 0) diodeCurrent = 1e-12; const thermalTerm = IDEALITY * Vt * Math.log(diodeCurrent / I0 + 1); voltage = thermalTerm - I * Rs; } return voltage; }
+
+  // Plain (no-VE) string I-V curve from per-substring irradiances
+  function generateIVCurveAdvanced(irradiancePerSubstring, cellTemp){
+    const TK = cellTemp + 273.15;
+    const Vt_global = k * TK / q;
+    const tempDiff = cellTemp - 25.0;
+
+    // Per-substring Shockley params (length = TOTAL_SUBSTRINGS)
+    const params = irradiancePerSubstring.map(irr => {
+      const irrFactor = Math.max(0.01, irr / 1000.0);
+      const Isc_sub = Isc_stc * irrFactor * (1 + tempCoeff_Isc * tempDiff);
+      const Voc_sub = (Voc_stc * (1 + tempCoeff_Voc * tempDiff)) / SUBSTRINGS_PER_PANEL;
+      const IL = Isc_sub;
+      const vocNorm = Voc_sub / (IDEALITY_FACTOR * Vt_global * (CELLS_PER_PANEL / SUBSTRINGS_PER_PANEL));
+      const I0 = IL * Math.exp(-Math.min(vocNorm, 50));
+
+      return {
+        IL,
+        I0,
+        Vt: Vt_global * (CELLS_PER_PANEL / SUBSTRINGS_PER_PANEL),
+        Rs: SERIES_RESISTANCE_PER_PANEL / SUBSTRINGS_PER_PANEL,
+        Rsh: SHUNT_RESISTANCE_PER_PANEL / SUBSTRINGS_PER_PANEL
+      };
+    });
+
+    // Current sweep upper bound; bypass clamps substrings as needed
+    const maxIsc = params.reduce((m, p) => Math.max(m, p.IL), 0);
+
+    const pts = [];
+    let maxP = 0;
+    const steps = 400;
+
+    for (let i = 0; i <= steps; i++){
+      const Istring = maxIsc * (1 - i / steps);
+
+      // Series string: sum substring voltages at the same current
+      let Vsum = 0;
+      for (let s = 0; s < params.length; s++){
+        let v = solveSubstringVoltage(Istring, params[s]);
+        if (v < BYPASS_DIODE_VOLTAGE) v = BYPASS_DIODE_VOLTAGE; // bypass diode forward drop
+        Vsum += v;
+      }
+
+      const P = Vsum * Istring;
+      if (P > maxP) maxP = P;
+      pts.push({ x: Vsum, y: Istring, power: P });
+    }
+
+    pts.sort((a,b) => a.x - b.x);
+    return {
+      points: pts,
+      maxPower: maxP,
+      voc: pts.at(-1)?.x || 0,
+      isc: pts[0]?.y || 0
+    };
+  }
+
+  function calculateSolarParameters(irr, cellTemp){ const TK = cellTemp+273.15; const Vt = k*TK/q; const tempDiff = cellTemp-25; const irrFactor = Math.max(0.01, irr/1000); const Isc = Isc_stc*irrFactor*(1+tempCoeff_Isc*tempDiff); const Voc = Voc_stc*PANELS_PER_STRING*(1+tempCoeff_Voc*tempDiff); const IL = Isc; const totalCells = PANELS_PER_STRING * CELLS_PER_PANEL; const vocNorm = Voc / (IDEALITY * Vt * totalCells); const I0 = IL * Math.exp(-Math.min(vocNorm,50)); return { IL, I0, Vt, Rs: SERIES_RESISTANCE_PER_PANEL*PANELS_PER_STRING, Rsh: SHUNT_RESISTANCE_PER_PANEL*PANELS_PER_STRING, Voc, totalCells } }
+  function calculateCurrentFromVoltage(V, p){ let I = p.IL; for (let i=0;i<5;i++){ const dv = (V+I*p.Rs)/(IDEALITY*p.Vt*p.totalCells); const e = Math.exp(Math.max(-10, Math.min(50, dv))); const f = p.IL - p.I0*(e-1) - (V+I*p.Rs)/p.Rsh - I; const df = -(p.I0*p.Rs*e)/(IDEALITY*p.Vt*p.totalCells) - p.Rs/p.Rsh - 1; I -= f/df; } return Math.max(0,I); }
+  function generateIVCurveUnshaded(irr, cellT){ const p = calculateSolarParameters(irr, cellT); const pts=[]; let maxP=0; const Vmax=p.Voc*1.02; for (let i=0;i<=200;i++){ const V = i/200*Vmax; const I = calculateCurrentFromVoltage(V,p); const P=V*I; pts.push({x:V,y:I,power:P}); if(P>maxP)maxP=P; } return { points: pts, maxPower: maxP } }
+
+  // VE-aware string I-V: sum per-panel voltages at Ipanel = D * Istring
+  function panelVoltageAtCurrent(panelIndex, I, irr, cellT){
+    const TK = cellT + 273.15;
+    const Vt_global = k * TK / q;
+    const tempDiff = cellT - 25.0;
+
+    const b = panelIndex*SUBSTRINGS_PER_PANEL;
+    const subIrr = [irr[b], irr[b+1], irr[b+2]];
+
+    const params = subIrr.map(gi=>{
+      const irrFactor = Math.max(0.01, gi/1000.0);
+      const Isc_sub   = Isc_stc * irrFactor * (1 + tempCoeff_Isc * tempDiff);
+      const Voc_sub   = (Voc_stc * (1 + tempCoeff_Voc * tempDiff)) / SUBSTRINGS_PER_PANEL;
+      const IL        = Isc_sub;
+      const vocNorm   = Voc_sub / (IDEALITY_FACTOR * Vt_global * (CELLS_PER_PANEL / SUBSTRINGS_PER_PANEL));
+      const I0        = IL * Math.exp(-Math.min(vocNorm, 50));
+      return { IL, I0, Vt: Vt_global * (CELLS_PER_PANEL / SUBSTRINGS_PER_PANEL),
+               Rs: SERIES_RESISTANCE_PER_PANEL / SUBSTRINGS_PER_PANEL,
+               Rsh: SHUNT_RESISTANCE_PER_PANEL / SUBSTRINGS_PER_PANEL };
+    });
+
+    let Vsum = 0;
+    for (const p of params){
+      let v = solveSubstringVoltage(I, p);
+      if (v < BYPASS_DIODE_VOLTAGE) v = BYPASS_DIODE_VOLTAGE;
+      Vsum += v;
+    }
+    // Optimizer floor: all panels are behind VE when enabled
+    if (VE.enabled) {
+      Vsum = Math.max(Vsum, PANEL_VMIN);
+    }
+    return Vsum;
+  }
+
+  function generateStringCurveWithVE(irr, cellT){
+    const maxIsc = Isc_stc * Math.max(0.01, Math.max(...irr)/1000.0);
+    const steps = 400;
+    const pts = [];
+    for (let i=0;i<=steps;i++){
+      const Istr = maxIsc * (1 - i/steps);
+      let Vsum = 0;
+      for (let p=0;p<PANELS_PER_STRING;p++){
+        const g = optimizerIndexForPanel(p);
+        const D = VE.enabled ? (VE.duty[g] ?? 1.0) : 1.0;
+        const Ipanel = Math.max(0, D * Istr);
+        Vsum += panelVoltageAtCurrent(p, Ipanel, irr, cellT);
+      }
+      pts.push({x:Vsum,y:Istr,power:Vsum*Istr});
+    }
+    return { points: pts, maxPower: Math.max(...pts.map(p=>p.power)) };
+  }
+
+  // Chart + MPPT helpers
+  let lastShadedIV=null;
+  function clamp(n,min,max){ return Math.max(min, Math.min(max,n)); }
+  function sampleIFromCurve(points,V){ if (!points?.length) return 0; if (V<=points[0].x) return points[0].y; if (V>=points.at(-1).x) return points.at(-1).y; let lo=0, hi=points.length-1; while(hi-lo>1){ const m=(lo+hi)>>1; if(points[m].x<V) lo=m; else hi=m; } const a=points[lo], b=points[hi]; const t=(V-a.x)/(b.x-a.x+1e-9); return a.y + t*(b.y-a.y); }
+  function sampleVFromCurve(points, I){ if (!points?.length) return 0; if (I >= points[0].y) return points[0].x; if (I <= points.at(-1).y) return points.at(-1).x; for (let i=0;i<points.length-1;i++){ const a=points[i], b=points[i+1]; if ((a.y>=I && b.y<=I) || (a.y<=I && b.y>=I)){ const t=(I - a.y)/(b.y - a.y + 1e-9); return a.x + t*(b.x - a.x); } } return points.at(-1).x; }
+  function estimate_dIdV(points,V){ if (!points || points.length<3) return 0; const eps = Math.max(0.5, 0.002*(points.at(-1).x||1)); const V1=clamp(V-eps,0,points.at(-1).x||0); const V2=clamp(V+eps,0,points.at(-1).x||0); const I1=sampleIFromCurve(points,V1); const I2=sampleIFromCurve(points,V2); return (I2-I1)/(V2-V1+1e-9); }
+
+  function mpptStep(dt, shadedIV){
+    if (!MPPT.enabled || MPPT.paused || !shadedIV?.points?.length) return;
+    MPPT.accum += dt; const points=shadedIV.points; const isc = points[0]?.y || 0;
+    if (!(MPPT.Iset>0)) resetMPPT(true);
+    while (MPPT.accum >= MPPT.period){
+      MPPT.accum -= MPPT.period;
+      const V = sampleVFromCurve(points, MPPT.Iset);
+      const I = Math.max(0, sampleIFromCurve(points, V));
+      const P = Math.max(0, V*I);
+      if (MPPT.mode==='po'){
+        if (P < MPPT.lastP) MPPT.dir *= -1;
+        MPPT.Iset = clamp(MPPT.Iset + MPPT.dir*MPPT.poStep, 0, isc);
+        MPPT.lastP = P; MPPT.lastV = V;
+      } else {
+        const dIdV = estimate_dIdV(points, V);
+        const cond = -I/(V+1e-9);
+        const err = dIdV - cond;
+        if (Math.abs(err) > 1e-6){
+          MPPT.Iset = clamp(MPPT.Iset - Math.sign(err)*MPPT.incStep, 0, isc);
+        }
+        MPPT.lastP=P; MPPT.lastV=V;
+      }
+    }
+    const V = sampleVFromCurve(points, MPPT.Iset);
+    MPPT.Vop = clamp(V, 0, points.at(-1)?.x||0);
+    MPPT.Iop = Math.max(0, sampleIFromCurve(points, MPPT.Vop));
+    MPPT.Pop = Math.max(0, MPPT.Vop*MPPT.Iop);
+    MPPT.Pac = MPPT.Pop * MPPT.eta;
+  }
+
+  // chart update throttles
+  let lastIvChartMs = 0, lastPanelVoltChartMs = 0, lastVeVoltChartMs = 0;
+  const CHART_MIN_MS = 120;
+
+  function initCharts(){
+    const ctx = document.getElementById('iv-chart').getContext('2d');
+    ivChart = new Chart(ctx, {
+      type:'line',
+      data:{datasets:[
+        {label:'Shaded I-V Curve', data:[], yAxisID:'yI', tension:0.1, pointRadius:0},
+        {label:'Unshaded I-V Curve', data:[], yAxisID:'yI', tension:0.1, pointRadius:0, borderDash:[5,5]},
+        {label:'P-V Curve (Shaded)', data:[], yAxisID:'yP', tension:0.1, pointRadius:0},
+        {label:'MPPT Operating Point', data:[], yAxisID:'yI', showLine:false, pointRadius:4, type:'scatter'}
+      ]},
+      options:{
+        responsive:true, maintainAspectRatio:false, interaction:{mode:'index', intersect:false},
+        scales:{
+          x:{ type:'linear', min:0, title:{display:true,text:'Voltage (V)',color:'white'}, ticks:{color:'white'}, grid:{color:'rgba(255,255,255,0.1)'} },
+          yI:{ type:'linear', position:'left', min:0, title:{display:true,text:'Current (A)',color:'white'}, ticks:{color:'white'}, grid:{color:'rgba(255,255,255,0.1)'} },
+          yP:{ type:'linear', position:'right', min:0, title:{display:true,text:'Power (W)',color:'white'}, ticks:{color:'white'}, grid:{display:false} }
+        },
+        plugins:{ legend:{labels:{color:'white'}}, title:{ display:true, text:'Advanced Physics-Based Model + MPPT (Current)', color:'white' } }
+      }
+    });
+
+    // Panel-voltage bar chart (28 bars)
+    panelVoltChart = new Chart(panelVoltChartCanvas.getContext('2d'), {
+      type:'bar',
+      data:{ labels: Array.from({length:PANELS_PER_STRING},(_,i)=>`P${String(i+1).padStart(2,'0')}`),
+        datasets:[{ label:'Panel V (approx, post-VE)', data:new Array(PANELS_PER_STRING).fill(0), borderWidth:0 }] },
+      options:{ responsive:true, maintainAspectRatio:false, scales:{ y:{ beginAtZero:true } }, plugins:{ legend:{display:false} } }
+    });
+
+    // VE trace chart (ECG-style)
+    veVoltChart = new Chart(veVoltChartCanvas.getContext('2d'), {
+      type:'line',
+      data:{ datasets:[] },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        animation:false,
+        parsing:false,
+        scales:{
+          x:{ type:'linear', min:0, max:VE_TRACE_CFG.windowSec, ticks:{color:'white'}, grid:{color:'rgba(255,255,255,0.08)'} },
+          y:{ beginAtZero:true, ticks:{color:'white'}, grid:{color:'rgba(255,255,255,0.08)'} }
+        },
+        plugins:{ legend:{labels:{color:'white'}} }
+      }
+    });
+  }
+
+  function buildVeTraceDatasets(){
+    if (!veVoltChart) return;
+    veVoltChart.data.datasets = veTrace.ids.map((pid, idx)=>({
+      label:`P${pid+1}`,
+      data:[],
+      tension:0.15,
+      pointRadius:0
+    }));
+    veVoltChart.update('none');
+  }
+
+  function updateIVChart(shadedData, unshadedData, numShadedSubstrings){
+    if (!shadedData || shadedData.points.length===0){
+      ivChart.data.datasets.forEach(d=>d.data=[]);
+      const nowMs0 = performance.now();
+      if (nowMs0 - lastIvChartMs > CHART_MIN_MS) { ivChart.update('none'); lastIvChartMs = nowMs0; }
+      ivDataDisplay.innerHTML='<span>No sunlight.</span>';
+      return;
+    }
+    const clampPts = pts => pts.filter(p=>p.x>=0).map(p=>({ x:p.x, y:Math.max(0,p.y), power:Math.max(0,p.power ?? (p.x*p.y)) }));
+    const shadedPts = clampPts(shadedData.points);
+    const unshadedPts = clampPts(unshadedData.points);
+
+    ivChart.data.datasets[0].data = shadedPts.map(p=>({x:p.x,y:p.y}));
+    ivChart.data.datasets[1].data = unshadedPts.map(p=>({x:p.x,y:p.y}));
+    ivChart.data.datasets[2].data = shadedPts.map(p=>({x:p.x,y:p.power}));
+
+    const vmax = Math.max(shadedPts.at(-1)?.x||0, unshadedPts.at(-1)?.x||0);
+    ivChart.options.scales.x.max = Math.max(0, vmax*1.02);
+
+    ivChart.data.datasets[3].data = (MPPT.enabled && shadedPts.length) ? [{x:MPPT.Vop,y:MPPT.Iop}] : [];
+    const nowMs = performance.now();
+    if (nowMs - lastIvChartMs > CHART_MIN_MS) { ivChart.update('none'); lastIvChartMs = nowMs; }
+
+    const powerLoss = unshadedData.maxPower>0 ? (1 - shadedData.maxPower/unshadedData.maxPower)*100 : 0;
+    const fmt=n=>Number.isFinite(n)?n.toFixed(2):'-';
+    ivDataDisplay.innerHTML = `
+      <span>Pmax (Shaded): <strong>${(shadedData.maxPower/1000).toFixed(2)} kW</strong></span>
+      <span>Pmax (Ideal): <strong>${(unshadedData.maxPower/1000).toFixed(2)} kW</strong></span>
+      <span>Power Loss: <strong style="color:#FF6384;">${powerLoss.toFixed(1)}%</strong></span>
+      <span>V<sub>op</sub> (MPPT): <strong>${fmt(MPPT.Vop)} V</strong></span>
+      <span>I<sub>op</sub> (MPPT): <strong>${fmt(MPPT.Iop)} A</strong></span>
+      <span>P<sub>DC</sub> = V·I: <strong>${fmt(MPPT.Pop/1000)} kW</strong></span>
+      <span>P<sub>AC</sub> (η=${MPPT.eta}): <strong>${fmt(MPPT.Pac/1000)} kW</strong></span>`;
+  }
+
+  // geometry utils
+  function convexHullXZ(points){ if (points.length<3) return points.slice(); const pts=points.slice().sort((a,b)=>(a.x===b.x)?a.z-b.z:a.x-b.x);
+    const cross=(o,a,b)=> (a.x-o.x)*(b.z-o.z) - (a.z-o.z)*(b.x-o.x);
+    const lower=[]; for (const p of pts){ while(lower.length>=2 && cross(lower.at(-2), lower.at(-1), p)<=0) lower.pop(); lower.push(p); }
+    const upper=[]; for (let i=pts.length-1;i>=0;i--){ const p=pts[i]; while(upper.length>=2 && cross(upper.at(-2), upper.at(-1), p)<=0) upper.pop(); upper.push(p); }
+    lower.pop(); upper.pop(); return lower.concat(upper); }
+  function projectPointToGround(point, sunDir){ if (Math.abs(sunDir.y)<1e-6) return null; const t=-point.y/sunDir.y; if (t<0) return null; return point.clone().add(sunDir.clone().multiplyScalar(t)); }
+  function isPointInPolygon(point, poly){ if (!poly || poly.length<3) return false; let inside=false; for (let i=0,j=poly.length-1;i<poly.length;j=i++){ const xi=poly[i].x, zi=poly[i].z; const xj=poly[j].x, zj=poly[j].z; const inter=((zi>point.z)!==(zj>point.z)) && (point.x < (xj-xi)*(point.z-zi)/(zj-zi)+xi); if (inter) inside=!inside; } return inside; }
+  function addMeshShadowHull(mesh, sunDir, outPolygons){ if (!mesh?.geometry?.attributes?.position) return; const arr = mesh.geometry.attributes.position.array; const pts = []; for (let i=0;i<arr.length;i+=3){ const vWorld = mesh.localToWorld(new THREE.Vector3(arr[i],arr[i+1],arr[i+2])); const gpt = projectPointToGround(vWorld, sunDir); if (gpt) pts.push(gpt); } if (pts.length>2) outPolygons.push(convexHullXZ(pts)); }
+
+  // Sun & tracker pose
+  function setSunPoseAt(t){
+    const pos = SunCalc.getPosition(t, LAT, LON);
+    const alt = pos.altitude; const az = pos.azimuth;
+    if (alt <= 0) { directionalLight.visible = false; return { alt, baseIrr:0, cellT:25 }; }
+    const sunDistance=800;
+    const sunX = sunDistance * Math.cos(alt) * Math.sin(az + Math.PI);
+    const sunY = sunDistance * Math.sin(alt);
+    const sunZ = sunDistance * Math.cos(alt) * Math.cos(az + Math.PI);
+    directionalLight.position.set(sunX, sunY, sunZ);
+    directionalLight.visible = true;
+
+    const maxTilt = THREE.MathUtils.degToRad(60);
+    let trackerAngle = Math.atan2(sunX, sunY);
+    trackerAngle = Math.max(-maxTilt, Math.min(maxTilt, trackerAngle));
+    solarLines.forEach(line => { line.rotation.z = -trackerAngle; });
+
+    const baseIrr = 1000 * Math.max(0, Math.sin(alt));
+    const cellT = 25 + (baseIrr/1000)*20;
+    return { alt, baseIrr, cellT };
+  }
+
+  // rotor time locking
+  const ROTOR_LOCK = { baseMs: 0 };
+  function beginDeterministicRotor(t0){ ROTOR_LOCK.baseMs = t0.getTime(); }
+  function endDeterministicRotor(){ }
+  function setRotorForTimeMs(ms){ const windSpeedMS = currentWindSpeed * 1000/3600; const omega = (windSpeedMS >= CUT_IN_SPEED_MS && windSpeedMS <= CUT_OUT_SPEED_MS) ? (TSR * windSpeedMS) / ROTOR_RADIUS : 0.0; const dt = (ms - ROTOR_LOCK.baseMs) / 1000; const angle = -omega * dt; if (windmill?.blades) windmill.blades.rotation.z = angle; }
+
+  // snapshot of string @ time t (VE-aware shadedIV)
+  function computeInstantAt(t){
+    setRotorForTimeMs(t.getTime());
+    const { alt, baseIrr, cellT } = setSunPoseAt(t);
+    if (alt <= 0) {
+      return { shadedIV:{points:[],maxPower:0}, unshadedIV:{points:[],maxPower:0}, shadedCount:0, baseIrr, cellT, irr:new Array(TOTAL_SUBSTRINGS).fill(0) };
+    }
+    const sunDir = directionalLight.position.clone().normalize().negate();
+    const shadowPolygons=[];
+    bladeMeshes.forEach(blade => addMeshShadowHull(blade, sunDir, shadowPolygons));
+    addMeshShadowHull(towerMesh, sunDir, shadowPolygons);
+    addMeshShadowHull(nacelleMesh, sunDir, shadowPolygons);
+    addMeshShadowHull(hubMesh, sunDir, shadowPolygons);
+
+    const shadedIrr = baseIrr * 0.15;
+    const irr = new Array(TOTAL_SUBSTRINGS).fill(baseIrr);
+    const panelWidth=1.133; const nz=12; const colsPerBand=nz/SUBSTRINGS_PER_PANEL;
+
+    for (let panelIdx=0; panelIdx<PANELS_PER_STRING; panelIdx++){
+      for (let subIdx=0; subIdx<SUBSTRINGS_PER_PANEL; subIdx++){
+        const gi = panelIdx*SUBSTRINGS_PER_PANEL + subIdx;
+        const gz = subIdx*colsPerBand + colsPerBand/2;
+        const localPos = new THREE.Vector3(
+          0,0,
+          -(PANELS_PER_STRING*panelWidth/2) + panelIdx*panelWidth + (gz+0.5)*(panelWidth/nz)
+        );
+        const worldPos = targetString.localToWorld(localPos.clone());
+        worldPos.y=0;
+        for (const poly of shadowPolygons){ if (isPointInPolygon(worldPos, poly)) { irr[gi]=shadedIrr; break; } }
+      }
+    }
+    let shadedCount=0; for(let i=0;i<TOTAL_SUBSTRINGS;i++){ if(irr[i]<baseIrr) shadedCount++; }
+    const shadedIV = VE.enabled ? generateStringCurveWithVE(irr, cellT) : generateIVCurveAdvanced(irr, cellT);
+    const unshadedIV = generateIVCurveUnshaded(baseIrr, cellT);
+    return { shadedIV, unshadedIV, shadedCount, baseIrr, cellT, irr };
+  }
+
+  // compute panel voltages for UI (approximate, applying VE duty)
+  function computePanelVoltagesPostVE(irr, cellT){
+    if (!lastShadedIV?.points?.length) return new Array(PANELS_PER_STRING).fill(0);
+    const Istring = MPPT.Iop || 0;
+    const V = new Array(PANELS_PER_STRING).fill(0);
+    for (let p=0;p<PANELS_PER_STRING;p++){
+      const g = optimizerIndexForPanel(p);
+      const D = VE.enabled ? (VE.duty[g] ?? 1.0) : 1.0;
+      const IpanelSrc = Math.max(0, D * Istring);
+      V[p] = panelVoltageAtCurrent(p, IpanelSrc, irr, cellT);
+    }
+    return V;
+  }
+
+  // push ECG-trace points
+  function updateVeLineChart(V) {
+    if (!veVoltChart || veTrace.ids.length===0) return;
+    const now = (performance.now() - veTrace.t0) / 1000;
+    veVoltChart.options.scales.x.min = Math.max(0, now - VE_TRACE_CFG.windowSec);
+    veVoltChart.options.scales.x.max = now;
+    veTrace.ids.forEach((pid, di) => {
+      const ds = veVoltChart.data.datasets[di].data;
+      ds.push({ x: now, y: V[pid] ?? 0 });
+      while (ds.length && ds[0].x < now - VE_TRACE_CFG.windowSec) ds.shift();
+    });
+    const tnow = performance.now();
+    if (tnow - lastVeVoltChartMs > CHART_MIN_MS){ veVoltChart.update('none'); lastVeVoltChartMs=tnow; }
+  }
+
+  // Panel Voltages panel update
+  function updatePanelVoltagesUI(){
+    if (!panelVoltPanel || panelVoltPanel.style.display === 'none') return;
+    if (!lastShadedIV || !LAST_IRR || !directionalLight?.visible || currentSunAltitude<=0){
+      panelVoltMeta.textContent = 'No sunlight';
+      panelVoltList.innerHTML = '';
+      return;
+    }
+    const VopDisp = MPPT.Vop;
+    const splitVolts = computePanelVoltagesPostVE(LAST_IRR, LAST_CELLT);
+    const rows=[];
+    for (let i=0;i<PANELS_PER_STRING;i++){
+      const label = `P${String(i+1).padStart(2,'0')}`;
+      const v = splitVolts[i];
+      rows.push(`<div>${label}</div><div><strong>${v.toFixed(1)} V</strong></div>`);
+    }
+    panelVoltList.innerHTML = rows.join('');
+    const sumV = splitVolts.reduce((a,b)=>a+b,0);
+    panelVoltMeta.innerHTML = `
+      <span class="pv-badge">V<sub>op</sub> = ${VopDisp.toFixed(1)} V</span>
+      <span class="pv-badge">I = ${(MPPT.Iop||0).toFixed(2)} A</span>
+      <span class="pv-badge">ΣV≈ ${sumV.toFixed(1)} V</span>`;
+    panelVoltChart.data.datasets[0].data = splitVolts.map(v=>Number.isFinite(v)?v:0);
+    const nowMs = performance.now();
+    if (nowMs - lastPanelVoltChartMs > CHART_MIN_MS) { panelVoltChart.update('none'); lastPanelVoltChartMs = nowMs; }
+  }
+
+  // VE stepper — per-optimizer reset logic, respects pause
+  function veStep(irr, cellT){
+    if (!VE.enabled || VE.paused) return;
+
+    // Per-panel voltages for this step
+    const panelV = computePanelVoltagesPostVE(irr, cellT);
+
+    // Per-optimizer average voltage (4 panels each)
+    const optV = new Array(NUM_OPTIMIZERS).fill(0);
+    for (let g = 0; g < NUM_OPTIMIZERS; g++){
+      let sum = 0;
+      for (let k = 0; k < PANELS_PER_OPT; k++){
+        const p = g * PANELS_PER_OPT + k;
+        sum += panelV[p] || 0;
+      }
+      optV[g] = sum / PANELS_PER_OPT;
+    }
+
+    const groupMax = Math.max(...optV);
+
+    for (let g = 0; g < NUM_OPTIMIZERS; g++){
+      const v = optV[g];
+      const vPrev = VE.prevV[g] ?? v;
+      const d = VE.duty[g] ?? 1.0;
+
+      const rising    = v > vPrev + 1.0;                         // sudden rise
+      const surge     = VE.wasShaded[g] && (v > groupMax - VE.thresholdV);
+      const resetting = VE.resetCountdown[g] > 0;
+
+      if (rising || surge){
+        VE.resetCountdown[g] = VE.resetMs;
+      }
+
+      if (resetting){
+        VE.duty[g] = Math.min(1.0, d + VE.dutyStep);
+        VE.resetCountdown[g] = Math.max(0, VE.resetCountdown[g] - VE.stepMs);
+      } else {
+        const diff = groupMax - v;
+        if (diff > VE.thresholdV){
+          VE.duty[g] = Math.max(VE.dutyMin, d - VE.dutyStep);
+        } else if (diff < VE.thresholdV * 0.5 && d < 1.0){
+          VE.duty[g] = Math.min(1.0, d + VE.dutyStep);
+        }
+      }
+
+      VE.wasShaded[g] = (v < groupMax - 2.0);
+      VE.prevV[g]     = v;
+    }
+
+    VE.lastVolts = panelV.slice();
+    updateVeLineChart(panelV);
+  }
+
+  function setSliderToMs(ms){
+    if (!sunTimes || totalDaylightMs <= 0) return;
+    const p = Math.max(0, Math.min(1, (ms - sunTimes.sunrise.getTime()) / totalDaylightMs));
+    timeSlider.value = Math.round(p * 1000);
+    updateSceneFromSlider();
+  }
+
+  function updateSceneFromSlider(){
+    if (!sunTimes || totalDaylightMs<=0) return;
+    const dayProgress = timeSlider.value/1000;
+    const tms = sunTimes.sunrise.getTime() + (dayProgress*totalDaylightMs);
+    const now = new Date(tms);
+
+    const sunPosition = SunCalc.getPosition(now, LAT, LON);
+    currentSunAltitude = sunPosition.altitude;
+    currentSunAzimuth = sunPosition.azimuth;
+
+    if (currentSunAltitude>0){
+      const sunDistance=800;
+      const sunX = sunDistance * Math.cos(currentSunAltitude) * Math.sin(currentSunAzimuth + Math.PI);
+      const sunY = sunDistance * Math.sin(currentSunAltitude);
+      const sunZ = sunDistance * Math.cos(currentSunAltitude) * Math.cos(currentSunAzimuth + Math.PI);
+      directionalLight.position.set(sunX,sunY,sunZ);
+      directionalLight.visible=true;
+
+      const maxTilt=THREE.MathUtils.degToRad(60);
+      let trackerAngle = Math.atan2(sunX, sunY);
+      trackerAngle=Math.max(-maxTilt, Math.min(maxTilt, trackerAngle));
+      solarLines.forEach(line=>{ line.rotation.z = -trackerAngle; });
+    } else {
+      directionalLight.visible=false;
+    }
+
+    const skyColor=new THREE.Color();
+    if (currentSunAltitude>0.1) skyColor.setHex(0x87ceeb);
+    else if (currentSunAltitude>-0.1) skyColor.setHex(0xffa500);
+    else skyColor.setHex(0x000033);
+    scene.background=skyColor;
+    scene.fog.color=skyColor;
+
+    timeDisplay.textContent = `Time: ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+
+    if (analysisMode){
+      updateAnalysis(0);
+    }
+  }
+
+  // indicator helpers
+  function updatePanelIndicators(groups){
+    if (!analysisMode || panelIndicators.length===0) return;
+    const colors=[0x00ff00,0xffe000,0xff8c00,0xff0000];
+    for(let i=0;i<PANELS_PER_STRING;i++){
+      const n=Math.min(3, Math.max(0, groups[i]||0));
+      const hex=colors[n];
+      const mat = panelIndicators[i].material;
+      if (mat.userData._hex !== hex){
+        mat.color.setHex(hex);
+        mat.emissive.setHex(hex);
+        mat.emissiveIntensity = n===0?0.6:0.9;
+        mat.userData._hex = hex;
+      }
+    }
+  }
+  function updatePanelIndicatorPositions(){
+    if (!analysisMode || !targetString || panelIndicators.length===0) return;
+    const panelLength=2.266;
+    targetString.updateMatrixWorld();
+    const pos = targetString.getWorldPosition(new THREE.Vector3());
+    panelIndicators.forEach(ind=>{
+      const z=ind.userData.localZ;
+      ind.position.set(pos.x - panelLength/2 - 1.6, 0.5, pos.z + z);
+    });
+  }
+
+  function updateAnalysis(deltaTime=0){
+    if (!targetString || !directionalLight.visible || currentSunAltitude<=0){
+      lastShadedIV=null;
+      updateIVChart(null,null,0);
+      updatePanelVoltagesUI();
+      return;
+    }
+    const baseIrr = 1000 * Math.max(0, Math.sin(currentSunAltitude));
+    const sunDir = directionalLight.position.clone().normalize().negate();
+
+    const shadowPolygons=[];
+    bladeMeshes.forEach(blade => addMeshShadowHull(blade, sunDir, shadowPolygons));
+    addMeshShadowHull(towerMesh, sunDir, shadowPolygons);
+    addMeshShadowHull(nacelleMesh, sunDir, shadowPolygons);
+    addMeshShadowHull(hubMesh, sunDir, shadowPolygons);
+
+    const irr=new Array(TOTAL_SUBSTRINGS).fill(baseIrr);
+    const panelWidth=1.133; const nz=12; const colsPerBand=nz/SUBSTRINGS_PER_PANEL;
+
+    for(let pi=0; pi<PANELS_PER_STRING; pi++){
+      for(let si=0; si<SUBSTRINGS_PER_PANEL; si++){
+        const gi=pi*SUBSTRINGS_PER_PANEL+si;
+        const gz=si*colsPerBand + colsPerBand/2;
+        const localPos=new THREE.Vector3(
+          0,0,
+          -(PANELS_PER_STRING*panelWidth/2) + pi*panelWidth + (gz+0.5)*(panelWidth/nz)
+        );
+        const worldPos=targetString.localToWorld(localPos.clone());
+        worldPos.y=0;
+
+        let shaded=false;
+        for(const poly of shadowPolygons){
+          if(isPointInPolygon(worldPos,poly)){ shaded=true; break; }
+        }
+        if (shaded) irr[gi]=baseIrr*0.15;
+      }
+    }
+
+    const groupsBypassed=new Array(PANELS_PER_STRING).fill(0);
+    for(let pi=0;pi<PANELS_PER_STRING;pi++){
+      let c=0;
+      for(let si=0;si<SUBSTRINGS_PER_PANEL;si++){
+        if(irr[pi*SUBSTRINGS_PER_PANEL+si]<baseIrr) c++;
+      }
+      groupsBypassed[pi]=c;
+    }
+
+    updatePanelIndicators(groupsBypassed);
+    updatePanelIndicatorPositions();
+
+    const cellT=25+(baseIrr/1000)*20;
+    const shadedIV = VE.enabled ? generateStringCurveWithVE(irr, cellT) : generateIVCurveAdvanced(irr, cellT);
+    const unshadedIV=generateIVCurveUnshaded(baseIrr,cellT);
+    lastShadedIV=shadedIV;
+    lastUnshadedPmax=unshadedIV.maxPower||0;
+
+    LAST_IRR = irr; LAST_CELLT = cellT;
+
+    // step MPPT (skip when live-scan owns timing)
+    if (!DRIVE_MPPT_FROM_ENERGY) mpptStep(deltaTime, shadedIV);
+
+    // VE ticker clock — respect pause
+    if (deltaTime>0){
+      VE.accum += deltaTime*1000;
+      while (VE.accum >= VE.stepMs){
+        veStep(LAST_IRR, LAST_CELLT);
+        VE.accum -= VE.stepMs;
+      }
+    }
+
+    const numShaded=groupsBypassed.reduce((a,b)=>a+b,0);
+    updateIVChart(shadedIV,unshadedIV,numShaded);
+    updatePanelVoltagesUI();
+  }
+
+  // Whole-day calculator (VE-aware)
+  async function computeWholeDayEnergy(){
+    try{
+      if (!datePicker.value) startSimulationForDate();
+      if (!targetString) pickNearestStringToWindmill();
+      if (!analysisMode) toggleAnalysisMode();
+
+      dailyRunBtn.disabled = true;
+      DAILY.E_ideal=DAILY.E_shaded=DAILY.E_dc=DAILY.E_ac=0;
+      showDaily();
+      dailyStatus.textContent='calculating… (VE-aware MPPT)';
+
+      const dayBase = new Date(datePicker.value + 'T00:00:00');
+      const t0 = SunCalc.getTimes(dayBase, LAT, LON).sunrise;
+      const t1 = SunCalc.getTimes(dayBase, LAT, LON).sunset;
+
+      if (!(t0 instanceof Date) || !(t1 instanceof Date) || t1<=t0){
+        dailyStatus.textContent='no daylight for this date/location';
+        dailyRunBtn.disabled=false; 
+        return;
+      }
+
+      beginDeterministicRotor(t0);
+
+      // Local MPPT sim (separate from UI MPPT), but VE is shared (so we can see its effect)
+      const sim = {
+        enabled: (invEnableSel.value === 'on'),
+        paused:false,
+        mode: mpptModeSel.value,
+        Iset:0, Vop:0, Iop:0, Pop:0, Pac:0,
+        lastP:0, lastV:0, dir:1,
+        accum:0,
+        period: 1 / Math.max(0.05, Number(mpptFreqInput.value || 10)),
+        poStep: Math.max(0.01, Number(poStepInput.value || 0.5)),
+        incStep: Math.max(0.01, Number(incStepInput.value || 0.4)),
+        eta: Math.min(1.0, Math.max(0.5, Number(invEtaInput.value || 0.97)))
+      };
+
+      function resetSim(sim, shadedIV){
+        const { impp } = getMpp(shadedIV.points || []);
+        if (!(sim.Iset>0)) sim.Iset = impp || 0;
+        sim.lastV = sampleVFromCurve(shadedIV.points || [], sim.Iset);
+        sim.lastP = 0; sim.dir = 1;
+      }
+      function mpptStepSim(sim, dt, shIV){
+        if (!sim.enabled || !shIV?.points?.length){ sim.Pop=sim.Pac=sim.Iop=0; return; }
+        sim.accum += dt;
+        const points = shIV.points;
+        const isc = points[0]?.y || 0;
+
+        if (!(sim.Iset>0)) resetSim(sim, shIV);
+
+        while (sim.accum >= sim.period){
+          sim.accum -= sim.period;
+          const V = sampleVFromCurve(points, sim.Iset);
+          const I = Math.max(0, sampleIFromCurve(points, V));
+          const P = Math.max(0, V*I);
+
+          if (sim.mode === 'po'){
+            if (P < sim.lastP) sim.dir *= -1;
+            sim.Iset = clamp(sim.Iset + sim.dir*sim.poStep, 0, isc);
+            sim.lastP = P; sim.lastV = V;
+          } else {
+            const dIdV = estimate_dIdV(points, V);
+            const cond  = -I/(V+1e-9);
+            const err   = dIdV - cond;
+            if (Math.abs(err) > 1e-6){
+              sim.Iset = clamp(sim.Iset - Math.sign(err)*sim.incStep, 0, isc);
+            }
+            sim.lastP = P; sim.lastV = V;
+          }
+        }
+
+        const Vop = sampleVFromCurve(points, sim.Iset);
+        sim.Vop = clamp(Vop, 0, points.at(-1)?.x||0);
+        sim.Iop = Math.max(0, sampleIFromCurve(points, sim.Vop));
+        sim.Pop = Math.max(0, sim.Vop*sim.Iop);
+        sim.Pac = sim.Pop * sim.eta;
+      }
+
+      let lastPaint = performance.now();
+      const paint = async (t) => {
+        if (performance.now() - lastPaint > 200){
+          const pct = Math.min(100, Math.round(100*((t - t0)/(t1 - t0))));
+
+          dailyStatus.textContent = `calculating… ${pct}%`;
+          await new Promise(requestAnimationFrame);
+          lastPaint = performance.now();
+        }
+      };
+
+      function integrate(tA, tB, fA, fB, depth){
+        const dt=(tB - tA)/1000;
+        if (dt<=WHOLEDAY.MIN_DT_SEC || depth>=WHOLEDAY.MAX_DEPTH){
+          substepAccumulate(tA, tB);
+          return;
+        }
+        const deltaP = Math.abs((fB.shadedIV.maxPower||0) - (fA.shadedIV.maxPower||0));
+        const shadeChange = (fA.shadedCount>0) || (fB.shadedCount>0);
+        if (shadeChange || deltaP > WHOLEDAY.POWER_TOL_W){
+          const tM = new Date((tA.getTime()+tB.getTime())/2);
+          const fM = computeInstantAt(tM);
+          integrate(tA,tM,fA,fM,depth+1);
+          integrate(tM,tB,fM,fB,depth+1);
+        } else {
+          substepAccumulate(tA, tB);
+        }
+      }
+
+      function substepAccumulate(tA, tB){
+        let tms = tA.getTime();
+        const endMs = tB.getTime();
+
+        while (tms < endMs - 0.5){
+          const tNow = new Date(tms);
+          const F = computeInstantAt(tNow); // VE-aware shadedIV if VE.enabled
+
+          // slice length smaller when shaded for accuracy
+          const shaded = F.shadedCount > 0;
+          const sliceSec = shaded ? 0.01 : 2.0;
+          const remainSec = (endMs - tms)/1000;
+          const thisSec = Math.min(sliceSec, remainSec);
+
+          // Add energies (kWh)
+          DAILY.E_ideal  += (F.unshadedIV.maxPower || 0) * (thisSec/3_600_000);
+          DAILY.E_shaded += (F.shadedIV.maxPower   || 0) * (thisSec/3_600_000);
+
+          // MPPT step on the curve produced with current VE duty
+          mpptStepSim(sim, thisSec, F.shadedIV);
+          DAILY.E_dc += (sim.Pop || 0) * (thisSec/3_600_000);
+          DAILY.E_ac += (sim.Pac || 0) * (thisSec/3_600_000);
+
+          // Advance VE inside the same slice using the *sim* current (so duty reacts)
+          // We temporarily mirror sim.Iop onto the UI MPPT so our veStep() can reuse it.
+          const savedIop = MPPT.Iop;
+          MPPT.Iop = sim.Iop;
+          VE.accum += thisSec*1000;
+          while (VE.accum >= VE.stepMs){
+            veStep(F.irr, F.cellT);
+            VE.accum -= VE.stepMs;
+          }
+          MPPT.Iop = savedIop;
+
+          tms += thisSec*1000;
+        }
+      }
+
+      // Main sweep across daylight hours
+      for (let t = new Date(t0); t < t1; ){
+        const next = new Date(Math.min(t.getTime()+WHOLEDAY.BASE_DT_SEC*1000, t1.getTime()));
+        const fA = computeInstantAt(t);
+        const fB = computeInstantAt(next);
+        integrate(t,next,fA,fB,0);
+        t = next;
+        await paint(t);
+      }
+
+      showDaily();
+      dailyStatus.textContent='done.';
+    } catch(err){
+      console.error(err);
+      dailyStatus.textContent=`error: ${err.message||err}`;
+    } finally {
+      dailyRunBtn.disabled = false;
+      endDeterministicRotor();
+    }
+  }
+
+  // --- measure shadow line on ground
+  function measureShadow(){
+    if (currentSunAltitude<=0){
+      measurementDisplay.innerHTML="Sun is below horizon.";
+    } else {
+      const tanA=Math.tan(currentSunAltitude);
+      if (tanA<0.001){
+        measurementDisplay.innerHTML=`Shadow Length: > 2000 m`;
+      } else {
+        let maxD=0;
+        let tip=new THREE.Vector3();
+        const pts=[];
+        bladeMeshes.forEach(b=>{ pts.push(b.getWorldPosition(new THREE.Vector3())); });
+        if (nacelleMesh){
+          const box=new THREE.Box3().setFromObject(nacelleMesh);
+          pts.push(new THREE.Vector3(box.min.x,box.max.y,box.min.z));
+          pts.push(new THREE.Vector3(box.max.x,box.max.y,box.max.z));
+        }
+        const sx=Math.sin(currentSunAzimuth+Math.PI);
+        const sz=Math.cos(currentSunAzimuth+Math.PI);
+
+        pts.forEach(p=>{
+          const L=p.y/tanA;
+          const x=p.x+L*sx;
+          const z=p.z+L*sz;
+          const s=new THREE.Vector3(x,0,z);
+          const d=s.distanceTo(windmill.position);
+          if (d>maxD){ maxD=d; tip.copy(s); }
+        });
+
+        measurementDisplay.innerHTML=`Shadow Length: ${maxD.toFixed(1)} m`;
+        shadowLine.geometry.setFromPoints([
+          windmill.position.clone().setY(0.1),
+          tip.clone().setY(0.1)
+        ]);
+        shadowLine.geometry.attributes.position.needsUpdate=true;
+        shadowLine.visible=true;
+      }
+    }
+    measurementDisplay.classList.add('visible');
+    setTimeout(()=>{ measurementDisplay.classList.remove('visible'); shadowLine.visible=false; }, 5000);
+  }
+
+  // --- scene setup / animation loop
+  function setupLighting(){
+    ambientLight = new THREE.AmbientLight(0x404040, 2);
+    scene.add(ambientLight);
+
+    directionalLight = new THREE.DirectionalLight(0xffffff, 4);
+    directionalLight.position.set(100,80,50);
+    directionalLight.castShadow=true;
+    directionalLight.shadow.mapSize.width = 2048;
+    directionalLight.shadow.mapSize.height= 2048;
+    directionalLight.shadow.camera.near=0.5;
+    directionalLight.shadow.camera.far=2500;
+    const s=250;
+    Object.assign(directionalLight.shadow.camera,{ left:-s,right:s,top:s,bottom:-s });
+    scene.add(directionalLight);
+  }
+
+  function createGround(){
+    const g=new THREE.PlaneGeometry(3000,3000);
+    const m=new THREE.MeshStandardMaterial({ color:0x228B22, side:THREE.DoubleSide });
+    ground=new THREE.Mesh(g,m);
+    ground.rotation.x=-Math.PI/2;
+    ground.receiveShadow=true;
+    scene.add(ground);
+  }
+
+  function createBladeGeometry(){
+    const L=80, seg=10;
+    const rootChord=4.5, tipChord=0.5;
+    const rootTwist=THREE.MathUtils.degToRad(22);
+    const tipTwist =THREE.MathUtils.degToRad(2);
+
+    const v=[]; const idx=[];
+    for(let i=0;i<=seg;i++){
+      const r=i/seg; const y=r*L;
+      const chord=rootChord*(1-r)+tipChord*r;
+      const twist=rootTwist*(1-r)+tipTwist*r;
+      const half=chord/2; const t=half*0.15;
+      const s=Math.sin(twist); const c=Math.cos(twist);
+      const x1=-half*c, z1=-half*s;
+      const x2= half*c, z2= half*s;
+      v.push(x1,y,z1-t, x2,y,z2-t, x1,y,z1+t, x2,y,z2+t);
+    }
+    for(let i=0;i<seg;i++){
+      const b=i*4;
+      const a=b, c=b+2, d=b+3, e=b+1, na=b+4, nb=b+5, nc=b+6, nd=b+7;
+      idx.push(
+        a,e,na, e,nb,na,
+        d,c,nd, c,nc,nd,
+        c,a,nc, a,na,nc,
+        e,d,nb, d,nd,nb
+      );
+    }
+    const geom=new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(v,3));
+    geom.setIndex(idx);
+    geom.computeVertexNormals();
+    return geom;
+  }
+
+  function createWindmill(){
+    windmill=new THREE.Group();
+    windmill.rotation.y=Math.PI/2;
+    const hubH=120;
+
+    const towerMat=new THREE.MeshStandardMaterial({color:0xD3D3D3});
+    const towerGeom=new THREE.CylinderGeometry(2.8/2,4.5/2,hubH,20);
+    towerMesh=new THREE.Mesh(towerGeom,towerMat);
+    towerMesh.position.y=hubH/2;
+    towerMesh.castShadow=true;
+    windmill.add(towerMesh);
+
+    const top=new THREE.Group();
+    top.position.y=hubH;
+    windmill.add(top);
+
+    const nacGeom=new THREE.BoxGeometry(12,5,4);
+    nacelleMesh=new THREE.Mesh(nacGeom,towerMat);
+    nacelleMesh.rotation.y=Math.PI/2;
+    nacelleMesh.position.z=-6;
+    nacelleMesh.castShadow=true;
+    top.add(nacelleMesh);
+
+    const hubGeom=new THREE.SphereGeometry(2.5,16,16);
+    hubMesh=new THREE.Mesh(hubGeom,new THREE.MeshStandardMaterial({color:0xEAEAEA}));
+    hubMesh.castShadow=true;
+    top.add(hubMesh);
+
+    const blades=new THREE.Group();
+    const bladeGeom=createBladeGeometry();
+    const bladeMat=new THREE.MeshStandardMaterial({ color:0xffffff, side:THREE.DoubleSide });
+
+    for(let i=0;i<3;i++){
+      const blade=new THREE.Mesh(bladeGeom,bladeMat);
+      blade.castShadow=true;
+      bladeMeshes.push(blade);
+
+      const cont=new THREE.Group();
+      cont.add(blade);
+      cont.rotation.z=((Math.PI*2)/3)*i;
+      blades.add(cont);
+    }
+
+    windmill.blades=blades;
+    top.add(blades);
+    scene.add(windmill);
+  }
+
+  function createSolarField(x){
+    const field=new THREE.Group();
+    field.position.x=x;
+    field.position.y=1;
+    scene.add(field);
+
+    const L=2.266, W=1.133, n=28;
+    const stringLen=n*W;
+
+    const panelMat=new THREE.MeshStandardMaterial({ color:0x050A30, roughness:0.1, metalness:0.2 });
+    const postMat=new THREE.MeshStandardMaterial({color:0x808080});
+
+    const numLines=10;
+    const spacing=5.0;
+
+    function stringModel(){
+      const g=new THREE.Group();
+
+      const panelGeom=new THREE.BoxGeometry(L,0.1,stringLen);
+      const panels=new THREE.Mesh(panelGeom,panelMat);
+      panels.castShadow=false;
+      panels.receiveShadow=true;
+      g.add(panels);
+
+      const y=0.06;
+      const thinMat=new THREE.LineBasicMaterial({ color:0xffffff, transparent:true, opacity:0.5 });
+      const thinPts=[];
+      for(let i=1;i<n;i++){
+        const z=-stringLen/2 + i*W;
+        thinPts.push(new THREE.Vector3(-L/2,y,z), new THREE.Vector3(L/2,y,z));
+      }
+      const thinGeo=new THREE.BufferGeometry().setFromPoints(thinPts);
+      g.add(new THREE.LineSegments(thinGeo,thinMat));
+
+      const thickMat=new THREE.LineBasicMaterial({ color:0xffffff, linewidth:2, transparent:true, opacity:0.8 });
+      const thickPts=[
+        new THREE.Vector3(-L/2,y,-stringLen/2),
+        new THREE.Vector3( L/2,y,-stringLen/2),
+        new THREE.Vector3( L/2,y, stringLen/2),
+        new THREE.Vector3(-L/2,y, stringLen/2),
+        new THREE.Vector3(-L/2,y,-stringLen/2)
+      ];
+      const thickGeo=new THREE.BufferGeometry().setFromPoints(thickPts);
+      g.add(new THREE.Line(thickGeo,thickMat));
+
+      const h=1.5;
+      const postGeo=new THREE.CylinderGeometry(0.2,0.2,h,8);
+      for(let z=-stringLen/2+2; z<=stringLen/2-2; z+=5){
+        const post=new THREE.Mesh(postGeo,postMat);
+        post.position.set(0,-h/2,z);
+        post.castShadow=false;
+        g.add(post);
+      }
+      return g;
+    }
+
+    for(let i=0;i<numLines;i++){
+      const line=new THREE.Group();
+      line.position.x=(i*spacing)-((numLines-1)*spacing)/2;
+      for(let j=0;j<4;j++){
+        const s=stringModel();
+        s.position.z=(j-1.5)*stringLen;
+        line.add(s);
+      }
+      field.add(line);
+      solarLines.push(line);
+    }
+  }
+
+  function pickNearestStringToWindmill(){
+    let nearest=null; let min=Infinity;
+    solarLines.forEach(line=>{
+      line.children.forEach(ss=>{
+        const p=ss.getWorldPosition(new THREE.Vector3());
+        const d=p.distanceTo(windmill.position);
+        if (d<min){ min=d; nearest=ss; }
+      });
+    });
+    if (nearest){
+      targetString=nearest;
+      if (!targetStringHelper){
+        targetStringHelper=new THREE.BoxHelper(targetString,0xffff00);
+        scene.add(targetStringHelper);
+      } else {
+        targetStringHelper.setFromObject(targetString);
+      }
+      targetStringHelper.visible=analysisMode;
+    }
+  }
+
+  function startSimulationForDate(){
+    const selected = new Date(datePicker.value + 'T00:00:00');
+    sunTimes = SunCalc.getTimes(selected, LAT, LON);
+    if (isNaN(sunTimes.sunrise?.getTime()) || isNaN(sunTimes.sunset?.getTime())){
+      sunTimes = SunCalc.getTimes(new Date(), LAT, LON);
+    }
+    totalDaylightMs = sunTimes.sunset.getTime() - sunTimes.sunrise.getTime();
+    updateSceneFromSlider();
+    resetMPPT(true);
+  }
+
+  function changeSpeed(d){
+    animationSpeed=Math.max(0.01, Math.min(2.0, animationSpeed+d));
+    speedDisplay.textContent=animationSpeed.toFixed(2)+'x';
+    retimeEnergyAnchor();
+  }
+  function toggleAnimation(){
+    isAnimationPaused=!isAnimationPaused;
+    // keep VE in sync with pause
+    VE.paused = isAnimationPaused;
+    if (veToggleBtn) veToggleBtn.textContent = VE.paused ? '► Run VE' : '❚❚ Pause VE';
+    pauseButton.textContent=isAnimationPaused?'► Play':'❚❚ Pause';
+  }
+
+  function toggleAnalysisMode(){
+    analysisMode=!analysisMode;
+    ivPanel.style.display=analysisMode?'block':'none';
+    if (!targetString) pickNearestStringToWindmill();
+    if (targetStringHelper) targetStringHelper.visible=analysisMode;
+    panelIndicators.forEach(ind=>ind.visible=analysisMode);
+    analyzeButton.textContent= analysisMode?'■ Stop Analysis':'📈 Analyze Solar String';
+    if (analysisMode){ resetMPPT(true); updateAnalysis(0); }
+  }
+
+  function createPanelIndicators(){
+    if (!targetString) return;
+    const W = 1.133;
+    const geom = new THREE.SphereGeometry(0.45,16,16);
+    for (let i=0;i<PANELS_PER_STRING;i++){
+      const mat = new THREE.MeshStandardMaterial({ color:0x00ff00, emissive:0x00ff00, emissiveIntensity:0.6 });
+      mat.userData = { _hex: 0x00ff00 };
+      const m = new THREE.Mesh(geom,mat);
+      m.userData.panelIndex = i;
+      m.userData.localZ = -(PANELS_PER_STRING*W/2) + (i+0.5)*W;
+      m.visible = false; m.castShadow = false; m.receiveShadow = false;
+      scene.add(m); panelIndicators.push(m);
+    }
+  }
+
+  // Live-scan tick (VE & MPPT advance with wall time)
+  function updateEnergyTick(){
+    if (!ENERGY.enabled || !analysisMode || !sunTimes || totalDaylightMs<=0 || isAnimationPaused) return;
+    if (!(lastShadedIV && lastShadedIV.points && directionalLight.visible && currentSunAltitude>0)) return;
+
+    const now = performance.now();
+    const stepMs = ENERGY.dt * 1000;
+
+    const targetMs = Math.min(
+      ENERGY.simStartMs + (now - ENERGY.wallStartMs)*animationSpeed,
+      sunTimes.sunset.getTime()
+    );
+
+    while (ENERGY._simMs + stepMs <= targetMs){
+      ENERGY._simMs += stepMs;
+      setCurrentSimTimeMs(ENERGY._simMs);
+
+      // MPPT step (0.1 s)
+      if (lastShadedIV) mpptStep(ENERGY.dt, lastShadedIV);
+
+      // VE ticker in sim time
+      VE.accum += stepMs;
+      while (VE.accum >= VE.stepMs){
+        veStep(LAST_IRR, LAST_CELLT);
+        VE.accum -= VE.stepMs;
+      }
+
+      const k = ENERGY.dt / 3_600_000; // seconds → hours → kWh
+      ENERGY.E_ideal  += (lastUnshadedPmax || 0)       * k;
+      ENERGY.E_shaded += (lastShadedIV?.maxPower || 0) * k;
+      ENERGY.E_dc     += (MPPT.Pop || 0)               * k;
+      ENERGY.E_ac     += (MPPT.Pac || 0)               * k;
+    }
+
+    if (ENERGY._simMs >= sunTimes.sunset.getTime()){
+      ENERGY.enabled = false;
+      DRIVE_MPPT_FROM_ENERGY = false;
+      energyLiveToggle.textContent = '▶ Start Live Scan';
+    }
+    updateEnergyPanel();
+  }
+
+  // panel volt toggle
+  panelVoltToggle.onclick = () => {
+    const showing = panelVoltPanel.style.display !== 'none';
+    panelVoltPanel.style.display = showing ? 'none' : 'block';
+    updatePanelVoltagesUI();
+  };
+
+  // --- init
+  function init(){
+    const today = new Date();
+    const offset = today.getTimezoneOffset();
+    const local = new Date(today.getTime() - offset*60*1000);
+    datePicker.value = local.toISOString().split('T')[0];
+
+    datePicker.onchange = startSimulationForDate;
+    timeSlider.oninput = updateSceneFromSlider;
+
+    measureButton.onclick = measureShadow;
+    analyzeButton.onclick = toggleAnalysisMode;
+
+    pauseButton.onclick = toggleAnimation;
+    speedUpButton.onclick = ()=>changeSpeed(0.25);
+    speedDownButton.onclick = ()=>changeSpeed(-0.25);
+
+    // scene
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87ceeb);
+    scene.fog = new THREE.Fog(0x87ceeb, 400, 2500);
+
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 3000);
+    camera.position.set(0,200,600);
+
+    renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    // WebGL context loss handling
+    renderer.domElement.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      isAnimationPaused = true;
+      VE.paused = true;
+      console.warn('WebGL context lost — pausing simulation.');
+    }, false);
+
+    renderer.domElement.addEventListener('webglcontextrestored', () => {
+      console.info('WebGL context restored — resuming simulation.');
+      isAnimationPaused = false;
+      VE.paused = false;
+    }, false);
+
+    setupLighting();
+    createGround();
+    createWindmill();
+    createSolarField(150);
+    createSolarField(-150);
+    pickNearestStringToWindmill();
+    createPanelIndicators();
+
+    controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0,70,0);
+
+    const lineMat = new THREE.LineBasicMaterial({ color:0xf39c12, linewidth:3 });
+    const lineGeo = new THREE.BufferGeometry().setFromPoints([ new THREE.Vector3(), new THREE.Vector3() ]);
+    shadowLine = new THREE.Line(lineGeo, lineMat);
+    shadowLine.visible = false;
+    scene.add(shadowLine);
+
+    initCharts();
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth/window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }, false);
+
+    startSimulationForDate();
+    setMpptFromUI();
+    showDaily();
+
+    const clock=new THREE.Clock();
+    const camDir=new THREE.Vector3();
+
+    function animate(){
+      requestAnimationFrame(animate);
+      const dt = clock.getDelta()*animationSpeed;
+
+      // free-spin rotor visually
+      if (windmill?.blades && !isAnimationPaused){
+        const ws=currentWindSpeed*1000/3600;
+        let w=0;
+        if (ws>=CUT_IN_SPEED_MS && ws<=CUT_OUT_SPEED_MS){
+          w=(TSR*ws)/ROTOR_RADIUS;
+        }
+        windmill.blades.rotation.z -= w*dt;
+      }
+
+      if (analysisMode){
+        if (targetStringHelper) targetStringHelper.update();
+        // If animation is paused, freeze analysis stepping (and thus VE tick)
+        const effDt = (isAnimationPaused || DRIVE_MPPT_FROM_ENERGY) ? 0 : dt;
+        updateAnalysis(effDt);
+      }
+
+      updateEnergyTick();
+
+      // compass
+      if (compassNeedle && camera){
+        camera.getWorldDirection(camDir);
+        const ang=Math.atan2(camDir.x, camDir.z);
+        compassNeedle.style.transform=`rotate(${-ang}rad)`;
+      }
+
+      renderer.render(scene,camera);
+    }
+    animate();
+  }
+
+  init();
+  </script>
+</body>
+</html>
